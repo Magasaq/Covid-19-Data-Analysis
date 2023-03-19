@@ -1,0 +1,134 @@
+SELECT * 
+FROM Covid.dbo.full_data
+order by 3,4
+
+SELECT * 
+FROM Covid.dbo.vaccinations
+order by 3,4
+
+-- select the data that we are going to use
+SELECT location, date, total_cases, new_cases, total_deaths
+FROM Covid.dbo.full_data
+order by 1,2
+
+-- looking at total cases vs total deaths
+SELECT location, date, total_cases, total_deaths, (total_deaths/total_cases)*100 as deathpercentage
+FROM Covid.dbo.full_data
+WHERE location like '%states%'
+order by 1,2
+
+--looking at total_cases vs population
+SELECT dbo.locations.location, date, total_cases, (total_cases/dbo.locations.population)*100 as pop 
+FROM dbo.full_data  
+JOIN dbo.locations 
+    on dbo.full_data.location = dbo.locations.location
+WHERE dbo.locations.location like '%states%'
+ORDER by 1,2
+
+--looking at countries with highest infection rate compared to population
+
+SELECT dbo.locations.location,dbo.locations.population, Max(total_cases) as highest_infection_count, Max(total_cases/dbo.locations.population)*100 as PercentagePopulationInfected
+FROM dbo.full_data  
+JOIN dbo.locations 
+    on dbo.full_data.location = dbo.locations.location
+--WHERE dbo.locations.location like '%states%'
+GROUP by dbo.locations.location, population
+ORDER by 3 DESC
+
+
+--showing countries with highest death count per popultion
+
+SELECT dbo.locations.location, Max(total_deaths) as totalDeathCount
+FROM dbo.full_data  
+JOIN dbo.locations 
+    on dbo.full_data.location = dbo.locations.location
+--WHERE dbo.locations.location like '%states%'
+GROUP by dbo.locations.location
+ORDER by 2 DESC
+
+
+-- calculations for continents
+--showing continents with the highest deaths count per population
+
+SELECT dbo.locations.continent, Max(total_deaths) as totalDeathCount
+FROM dbo.full_data  
+JOIN dbo.locations 
+    on dbo.full_data.location = dbo.locations.location
+WHERE dbo.locations.location is not NULL
+GROUP by dbo.locations.continent
+ORDER by 2 DESC
+
+--global calculations
+SELECT date, SUM(new_cases) as total_cases, SUM(new_deaths) as total_death, SUM(new_deaths)/SUM(new_cases)*100 as percentageOfdeaths
+FROM dbo.full_data
+WHERE new_cases > 0
+GROUP by date
+
+--looking at total population vs vactinations
+SELECT vac.location, dea.date, SUM(dea.new_cases) as cases, SUM(vac.daily_people_vaccinated) as daily_vaccin
+FROM dbo.full_data  dea
+JOIN dbo.vaccinations vac
+    on dea.location = vac.location 
+    and dea.date = vac.date 
+--WHERE dbo.locations.location is not NULL
+GROUP by vac.location, dea.date
+ORDER by 1,4
+
+
+-- use cte
+with PopvsVac (location, date, cases, daily_vaccin)
+AS
+(SELECT vac.location, dea.date, SUM(dea.new_cases) as cases, SUM(vac.daily_people_vaccinated) as daily_vaccin
+FROM dbo.full_data  dea
+JOIN dbo.vaccinations vac
+    on dea.location = vac.location 
+    and dea.date = vac.date 
+--WHERE dbo.locations.location is not NULL
+GROUP by vac.location, dea.date
+--ORDER by 1,4
+)
+SELECT PopvsVac.location, PopvsVac.date, PopvsVac.cases, PopvsVac.daily_vaccin, loc.population, 
+SUM(daily_vaccin) OVER (partition by PopvsVac.location order by PopvsVac.date) as total_vaccin
+from PopvsVac
+JOIN dbo.locations loc
+    on PopvsVac.location = loc.location
+WHERE PopvsVac.daily_vaccin is not NULL
+ORDER by 1 
+
+
+--use temp table
+CREATE TABLE #percentpopulationvaccin
+(
+    location VARCHAR(50),
+    date DATE,
+    cases INT,
+    daily_vaccin INT
+)
+
+INSERT INTO #percentpopulationvaccin
+SELECT vac.location, dea.date, SUM(dea.new_cases) as cases, SUM(vac.daily_people_vaccinated) as daily_vaccin
+FROM dbo.full_data  dea
+JOIN dbo.vaccinations vac
+    on dea.location = vac.location 
+    and dea.date = vac.date 
+--WHERE dbo.locations.location is not NULL
+GROUP by vac.location, dea.date
+--ORDER by 1,4
+
+SELECT per.location, per.date, per.cases, per.daily_vaccin, loc.population
+from #percentpopulationvaccin per
+JOIN dbo.locations loc 
+on loc.location = per.location
+ORDER by 6 DESC
+
+
+
+--create view to store data for later visualisations
+create VIEW percentpopulationvaccin as 
+SELECT vac.location, dea.date, SUM(dea.new_cases) as cases, SUM(vac.daily_people_vaccinated) as daily_vaccin
+FROM dbo.full_data  dea
+JOIN dbo.vaccinations vac
+    on dea.location = vac.location 
+    and dea.date = vac.date 
+--WHERE dbo.locations.location is not NULL
+GROUP by vac.location, dea.date
